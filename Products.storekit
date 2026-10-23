@@ -1,0 +1,39 @@
+{
+  "identifier" : "SkuffStore",
+  "nonRenewingSubscriptions" : [ ],
+  "products" : [
+    {
+      "displayPrice" : "12.99",
+      "familyShareable" : true,
+      "internalID" : "SKUFFPRO",
+      "localizations" : [
+        {
+          "description" : "Unlimited tabs, custom fonts, image icons, every theme, and tab shape controls.",
+          "displayName" : "Pro Unlock",
+          "locale" : "en_US"
+        },
+        {
+          "description" : "Ubegrensede faner, egne skrifter, bildeikoner, alle temaer og form på fanene.",
+          "displayName" : "Pro Unlock",
+          "locale" : "nb"
+        }
+      ],
+      "productID" : "no.voq.skuff.pro",
+      "referenceName" : "Pro Unlock",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "SKUFF",
+    "_developerTeamID" : "M8CFKM9P5V",
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [ ]
+  },
+  "subscriptionGroups" : [ ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}
