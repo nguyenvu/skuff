@@ -7,8 +7,13 @@ private func folderBackground(store: LibraryStore, color: Color) -> some View {
     if store.settings.connectedTab {
         Color.clear
     } else {
-        FolderChrome(color: color)
+        FolderChrome(color: color, finish: store.settings.tabFinish, shape: Rectangle())
     }
+}
+
+/// Text color inside a folder: follows the tab's finish, so glass folders use system ink.
+private func folderInk(store: LibraryStore, paint: SkuffColor) -> Color {
+    skuffTabInk(finish: store.settings.tabFinish, paint: paint)
 }
 
 private func folderInsets(store: LibraryStore, base: CGFloat) -> EdgeInsets {
@@ -26,13 +31,31 @@ private func folderInsets(store: LibraryStore, base: CGFloat) -> EdgeInsets {
     }
 }
 
-private struct FolderChrome: View {
+/// Folder background. Glass finishes match their tabs: Liquid is plain system glass,
+/// Glass is lightly tinted. Other finishes fill the folder with the tab's color.
+private struct FolderChrome<S: Shape>: View {
     var color: Color
+    var finish: TabFinish
+    var shape: S
 
     var body: some View {
-        ZStack {
-            Rectangle().fill(.ultraThinMaterial)
-            color.opacity(0.72)
+        switch finish {
+        case .liquid:
+            ZStack {
+                Color.clear.glassEffect(.regular, in: shape)
+                // Keeps the glass clickable; see TabBackground.
+                shape.fill(Color.black.opacity(0.01))
+            }
+        case .glass:
+            ZStack {
+                Color.clear.glassEffect(.regular.tint(color.opacity(0.25)), in: shape)
+                shape.fill(Color.black.opacity(0.01))
+            }
+        default:
+            ZStack {
+                Rectangle().fill(.ultraThinMaterial)
+                color.opacity(0.72)
+            }
         }
     }
 }
@@ -101,7 +124,7 @@ struct FolderSheetContainer: View {
         let shadow = store.settings.tabShadow
         let offset = tabShadowOffset
         return ZStack {
-            FolderChrome(color: paint.color)
+            FolderChrome(color: paint.color, finish: store.settings.tabFinish, shape: face)
             if store.settings.paperEdge {
                 face.stroke(Color.white.opacity(0.35), lineWidth: 1)
                     .blendMode(.overlay)
@@ -229,7 +252,7 @@ private struct UpgradeCard: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
         }
-        .foregroundStyle(paint.textColor)
+        .foregroundStyle(folderInk(store: store, paint: paint))
         .padding(folderInsets(store: store, base: 24))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background { folderBackground(store: store, color: paint.color) }
@@ -255,7 +278,7 @@ private struct LaterKindView: View {
                     .font(.caption)
             }
         }
-        .foregroundStyle(paint.textColor)
+        .foregroundStyle(folderInk(store: store, paint: paint))
         .padding(folderInsets(store: store, base: 24))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background { folderBackground(store: store, color: paint.color) }
@@ -321,7 +344,7 @@ struct FolderSheetView: View {
                 .padding(folderInsets(store: store, base: TabMetrics.make(settings: store.settings, isPro: store.pro.isPro).panelPadding))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .background { folderBackground(store: store, color: paint.color) }
-                .foregroundStyle(paint.textColor)
+                .foregroundStyle(folderInk(store: store, paint: paint))
                 .onDrop(of: [.fileURL], isTargeted: nil) { providers in
                     store.acceptDrop(providers, onto: tab.id)
                     return true
@@ -367,7 +390,7 @@ struct FolderSheetView: View {
             Spacer()
             Button(editing ? "Done" : "Edit") { editing.toggle() }
                 .buttonStyle(.bordered)
-                .tint(paint.textColor)
+                .tint(folderInk(store: store, paint: paint))
                 .accessibilityLabel(editing ? "Done managing apps" : "Manage apps in this tab")
         }
     }

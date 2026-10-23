@@ -462,11 +462,14 @@ struct EdgeStripView: View {
             )
             .accessibilityLabel("Move the tab strip")
         let plus = circleButton("plus", label: "Add tab", action: store.addTab)
+        let settings = circleButton("gearshape", label: "Settings", action: store.showSettings)
+            .help("Settings")
+        // Order from the tabs outward: Settings, grip, +.
         return Group {
             if edge.runsAlongX {
-                HStack(spacing: 4) { grip; plus }
+                HStack(spacing: 4) { settings; grip; plus }
             } else {
-                VStack(spacing: 4) { grip; plus }
+                VStack(spacing: 4) { settings; grip; plus }
             }
         }
         .background {

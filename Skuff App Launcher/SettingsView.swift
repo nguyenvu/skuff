@@ -176,6 +176,8 @@ struct SettingsView: View {
                                     .padding(4)
                             }
                         }
+                        // A plain button only hits drawn pixels; make the whole card clickable.
+                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
                     .buttonStyle(.plain)
                 }
@@ -216,7 +218,7 @@ struct SettingsView: View {
             .disabled(!draftFinish.usesThemeColor)
             .opacity(draftFinish.usesThemeColor ? 1 : 0.45)
             if !draftFinish.usesThemeColor {
-                Text("Liquid uses the default macOS glass, so theme colors are not applied to tabs.")
+                Text("Liquid uses the default macOS glass for tabs and folders, so theme colors are not applied.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -885,6 +887,8 @@ struct SettingsView: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(selected ? Color.accentColor : Color.primary.opacity(0.08), lineWidth: selected ? 1.5 : 0.5)
             }
+            // A plain button only hits drawn pixels; make the whole card clickable.
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func applyCTA(_ title: String, help: String? = nil, action: @escaping () -> Void) -> some View {

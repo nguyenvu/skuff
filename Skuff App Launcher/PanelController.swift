@@ -27,6 +27,15 @@ final class ShapedHostingView<Content: View>: NSHostingView<Content> {
     }
 }
 
+/// Holds the folder content with room around it for its shadow. Clicks in that margin
+/// fall through instead of being swallowed by the panel.
+final class SheetContainerView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit === self ? nil : hit
+    }
+}
+
 final class PassThroughHostingView<Content: View>: NSHostingView<Content> {
     var interactiveRects: [CGRect] = []
 
@@ -245,7 +254,11 @@ final class PanelController: NSObject {
         sheetHost.wantsLayer = true
         sheetHost.clipsToBounds = false
         sheetHost.layer?.backgroundColor = NSColor.clear.cgColor
-        sheet.contentView = sheetHost
+        let container = SheetContainerView()
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.clear.cgColor
+        container.addSubview(sheetHost)
+        sheet.contentView = container
         return StripWindow(screenID: screenID, panel: panel, hosting: hosting, sheet: sheet, sheetHost: sheetHost)
     }
 
@@ -448,20 +461,24 @@ final class PanelController: NSObject {
             size = CGSize(width: 420, height: sheetHeight(for: tab, dock: dock))
         }
         let tabFrame = screenRect(local, in: strip)
-        let frame = sheetFrame(tab: tabFrame, stripFrame: strip.panel.frame, edge: store.settings.edge, size: size, dock: dock)
+        let edge = store.settings.edge
+        let face = sheetFrame(tab: tabFrame, stripFrame: strip.panel.frame, edge: edge, size: size, dock: dock)
+        let window = sheetWindowFrame(around: face, edge: edge)
+        let hostFrame = face.offsetBy(dx: -window.minX, dy: -window.minY)
         let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let shouldAnimate = animated && !reduce && (presentedTabID != id || !strip.sheet.isVisible)
-        present(strip.sheet, frame: frame, edge: store.settings.edge, animated: shouldAnimate)
-        store.openBump = bumpInSheet(tabFrame, sheet: strip.sheet)
+        present(strip.sheet, frame: window, host: strip.sheetHost, hostFrame: hostFrame, edge: edge, animated: shouldAnimate)
+        store.openBump = bumpInSheet(tabFrame, face: face)
         updateSheetHit(strip)
         presentedTabID = id
     }
 
-    private func present(_ sheet: NSPanel, frame: CGRect, edge: ScreenEdge, animated: Bool) {
+    private func present(_ sheet: NSPanel, frame: CGRect, host: NSView, hostFrame: CGRect, edge: ScreenEdge, animated: Bool) {
         let motion = store.settings.sheetMotion
         guard animated else {
             sheet.alphaValue = 1
-            sheet.setFrame(frame, display: true)
+            sheet.setFrame(frame, display: false)
+            host.frame = hostFrame
             if let folder = sheet as? FolderPanel { folder.allowsKey = true }
             if !sheet.isVisible { sheet.orderFrontRegardless() }
             if shouldBecomeKey() { sheet.makeKey() }
@@ -472,6 +489,7 @@ final class PanelController: NSObject {
         if motion == .fade {
             sheet.alphaValue = 0
             sheet.setFrame(frame, display: false)
+            host.frame = hostFrame
             if let folder = sheet as? FolderPanel { folder.allowsKey = true }
             sheet.orderFrontRegardless()
             NSAnimationContext.runAnimationGroup { context in
@@ -485,20 +503,67 @@ final class PanelController: NSObject {
             return
         }
         sheet.alphaValue = 1
-        let start = tucked(frame, edge: edge)
-        sheet.setFrame(start, display: false)
-            if let folder = sheet as? FolderPanel { folder.allowsKey = true }
-            sheet.orderFrontRegardless()
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.28
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                sheet.animator().setFrame(frame, display: true)
-            }, completionHandler: {
-                Task { @MainActor in self.liftStrips() }
-            })
-            if shouldBecomeKey() { sheet.makeKey() }
-            liftStrips()
-            DispatchQueue.main.async { self.liftStrips() }
+        sheet.setFrame(frame, display: false)
+        host.frame = hostFrame
+        if let folder = sheet as? FolderPanel { folder.allowsKey = true }
+        // Add the animation before ordering in, so the first frame is already hidden.
+        animateSheetContent(sheet, edge: edge, appearing: true)
+        sheet.orderFrontRegardless()
+        if shouldBecomeKey() { sheet.makeKey() }
+        liftStrips()
+        DispatchQueue.main.async { self.liftStrips() }
+    }
+
+    private static let slideKey = "skuff.slide"
+    private static let slidePhase = "skuff.slidePhase"
+    /// How far the folder travels as it slides out from under its tab.
+    private static let slideDistance: CGFloat = 36
+
+    /// Slides and fades the folder's content layer; the window itself stays put.
+    /// Animating the window frame made the window server move it every frame and
+    /// clashed with frame updates during the slide (fitted height, hit path), which
+    /// is what made the old slide flicker.
+    private func animateSheetContent(
+        _ sheet: NSPanel,
+        edge: ScreenEdge,
+        appearing: Bool,
+        completion: (() -> Void)? = nil
+    ) {
+        guard let layer = sheet.contentView?.layer else {
+            completion?()
+            return
+        }
+        // Toward the screen edge, in the superlayer's space (y up).
+        let d = Self.slideDistance
+        let offset: CGPoint = switch edge {
+        case .right: CGPoint(x: d, y: 0)
+        case .left: CGPoint(x: -d, y: 0)
+        case .top: CGPoint(x: 0, y: d)
+        case .bottom: CGPoint(x: 0, y: -d)
+        }
+        let tucked = CATransform3DMakeTranslation(offset.x, offset.y, 0)
+        let move = CABasicAnimation(keyPath: "transform")
+        move.fromValue = appearing ? tucked : CATransform3DIdentity
+        move.toValue = appearing ? CATransform3DIdentity : tucked
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = appearing ? 0 : 1
+        fade.toValue = appearing ? 1 : 0
+        let group = CAAnimationGroup()
+        group.animations = [move, fade]
+        group.duration = appearing ? 0.24 : 0.16
+        group.timingFunction = appearing
+            ? CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.25, 1)
+            : CAMediaTimingFunction(name: .easeIn)
+        group.setValue(appearing ? "show" : "hide", forKey: Self.slidePhase)
+        if !appearing {
+            // Stay hidden until the window is ordered out.
+            group.fillMode = .forwards
+            group.isRemovedOnCompletion = false
+        }
+        CATransaction.begin()
+        CATransaction.setCompletionBlock(completion)
+        layer.add(group, forKey: Self.slideKey)
+        CATransaction.commit()
     }
 
     /// Separate look: strip above the sheet. Connected look: sheet (with the tab bump) above inactive tabs.
@@ -518,8 +583,25 @@ final class PanelController: NSObject {
         }
     }
 
-    private func bumpInSheet(_ tabScreen: CGRect, sheet: NSPanel) -> CGRect {
-        let frame = sheet.frame
+    /// Room around the folder for its shadow, on every side except the screen edge.
+    private static let sheetShadowMargin: CGFloat = 16
+
+    private func sheetWindowFrame(around face: CGRect, edge: ScreenEdge) -> CGRect {
+        let m = Self.sheetShadowMargin
+        switch edge {
+        case .right: return CGRect(x: face.minX - m, y: face.minY - m, width: face.width + m, height: face.height + 2 * m)
+        case .left: return CGRect(x: face.minX, y: face.minY - m, width: face.width + m, height: face.height + 2 * m)
+        case .top: return CGRect(x: face.minX - m, y: face.minY - m, width: face.width + 2 * m, height: face.height + m)
+        case .bottom: return CGRect(x: face.minX - m, y: face.minY, width: face.width + 2 * m, height: face.height + m)
+        }
+    }
+
+    /// The folder's own area on screen, without the shadow margin.
+    private func sheetFaceOnScreen(_ strip: StripWindow) -> CGRect {
+        strip.sheet.convertToScreen(strip.sheetHost.frame)
+    }
+
+    private func bumpInSheet(_ tabScreen: CGRect, face frame: CGRect) -> CGRect {
         return CGRect(
             x: tabScreen.minX - frame.minX,
             y: frame.maxY - tabScreen.maxY,
@@ -568,19 +650,19 @@ final class PanelController: NSObject {
                 })
                 continue
             }
-            let end = tucked(sheet.frame, edge: edge)
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.22
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                sheet.animator().setFrame(end, display: true)
-            }, completionHandler: {
+            animateSheetContent(sheet, edge: edge, appearing: false) {
                 Task { @MainActor in
                     if self.store.openTabID == nil {
                         sheet.allowsKey = false
                         sheet.orderOut(nil)
                     }
+                    // Drop the held "hidden" state, unless a reopen already replaced it.
+                    if let layer = sheet.contentView?.layer,
+                       layer.animation(forKey: Self.slideKey)?.value(forKey: Self.slidePhase) as? String == "hide" {
+                        layer.removeAnimation(forKey: Self.slideKey)
+                    }
                 }
-            })
+            }
         }
     }
 
@@ -588,7 +670,7 @@ final class PanelController: NSObject {
         guard store.openTabID != nil else { return }
         for strip in strips.values {
             if strip.panel.isVisible && strip.panel.frame.contains(point) { return }
-            if strip.sheet.isVisible && strip.sheet.frame.contains(point) { return }
+            if strip.sheet.isVisible && sheetFaceOnScreen(strip).contains(point) { return }
         }
         store.closeFolder()
     }
@@ -713,17 +795,6 @@ final class PanelController: NSObject {
             origin = min(max(upper - length, limitMin), max(limitMin, limitMax - length))
         }
         return (origin, length)
-    }
-
-    private func tucked(_ frame: CGRect, edge: ScreenEdge) -> CGRect {
-        var frame = frame
-        switch edge {
-        case .right: frame.origin.x += frame.width
-        case .left: frame.origin.x -= frame.width
-        case .top: frame.origin.y += frame.height
-        case .bottom: frame.origin.y -= frame.height
-        }
-        return frame
     }
 
     private func scheduleRelayout(reason: String) {

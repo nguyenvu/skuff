@@ -124,11 +124,13 @@ struct TabFaceLabel: View {
         max(24, maxAlong - metrics.labelChrome(horizontal: horizontal))
     }
 
+    /// Each later tab is drawn over the end of the one before it, so the overlap is
+    /// reserved at the trailing end (right, or bottom when vertical).
     private var labelInsets: EdgeInsets {
         if horizontal {
-            return EdgeInsets(top: 0, leading: metrics.horizontalEndPad + metrics.overlap, bottom: 0, trailing: metrics.horizontalEndPad)
+            return EdgeInsets(top: 0, leading: metrics.horizontalEndPad, bottom: 0, trailing: metrics.horizontalEndPad + metrics.overlap)
         }
-        return EdgeInsets(top: metrics.verticalEndPad + metrics.overlap, leading: 2, bottom: metrics.verticalEndPad, trailing: 2)
+        return EdgeInsets(top: metrics.verticalEndPad, leading: 2, bottom: metrics.verticalEndPad + metrics.overlap, trailing: 2)
     }
 
     @ViewBuilder

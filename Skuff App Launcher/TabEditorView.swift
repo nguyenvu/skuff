@@ -289,8 +289,9 @@ struct TabEditorView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
+        VStack(spacing: 12) {
             tabPreview
+                .frame(maxWidth: .infinity)
             TextField("Name", text: $draft.title)
                 .textFieldStyle(.roundedBorder)
                 .focused($nameFocused)
@@ -302,16 +303,20 @@ struct TabEditorView: View {
         let paint = SkuffColor(hex: draft.colorHex)
         let shape = store.settings.effectiveShape(isPro: store.pro.isPro)
         let face = TrapezoidTabShape(slant: shape.slant, cornerRadius: shape.cornerRadius, edge: .bottom, skew: shape.skew)
-        return HStack(alignment: .bottom, spacing: -shape.overlap) {
-            previewChip(face: face, paint: paint.dimmed(), active: false, shape: shape)
-            previewChip(face: face, paint: paint, active: true, shape: shape)
-        }
-        .frame(width: 132, height: max(36, shape.tabWidth + 8))
-        .accessibilityLabel("Tab preview")
+        return previewChip(face: face, paint: paint, active: true, shape: shape)
+            .frame(height: max(36, shape.tabWidth + 8))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Tab preview: \(previewTitle)")
+    }
+
+    private var previewTitle: String {
+        draft.trimmedTitle.isEmpty ? "Tab" : draft.trimmedTitle
     }
 
     private func previewChip(face: TrapezoidTabShape, paint: SkuffColor, active: Bool, shape: EffectiveShape) -> some View {
-        ZStack {
+        let metrics = TabMetrics.make(settings: store.settings, isPro: store.pro.isPro)
+        let ink = skuffTabInk(finish: store.settings.tabFinish, paint: paint)
+        return ZStack {
             TabBackground(
                 style: store.settings.tabFinish,
                 face: face,
@@ -323,16 +328,18 @@ struct TabEditorView: View {
                 reduceMotion: true,
                 edge: .bottom
             )
-            HStack(spacing: TabMetrics.make(settings: store.settings, isPro: store.pro.isPro).iconSpacing) {
-                previewGlyph(paint.textColor)
-                Text(draft.trimmedTitle.isEmpty ? "Tab" : draft.trimmedTitle)
-                    .font(TabMetrics.make(settings: store.settings, isPro: store.pro.isPro).font)
+            HStack(spacing: metrics.iconSpacing) {
+                previewGlyph(ink)
+                Text(previewTitle)
+                    .font(metrics.font)
                     .lineLimit(1)
+                    .truncationMode(.middle)
             }
-            .foregroundStyle(skuffTabInk(finish: store.settings.tabFinish, paint: paint))
+            .foregroundStyle(ink)
             .padding(.horizontal, 10)
         }
-        .frame(width: 78, height: max(28, shape.tabWidth))
+        // Sized like a real tab on the strip, so long names show in full (up to a limit).
+        .frame(width: min(320, max(shape.tabHeight, metrics.fittedLength(for: previewTitle, horizontal: true))), height: max(28, shape.tabWidth))
     }
 
     @ViewBuilder
